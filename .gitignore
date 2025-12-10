@@ -12,6 +12,7 @@ coverage
 .next/
 out/
 build
+.next.zip
 
 # misc
 .DS_Store
