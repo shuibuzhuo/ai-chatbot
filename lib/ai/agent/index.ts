@@ -21,6 +21,9 @@ import { isProductionEnvironment } from "@/lib/constants";
 import type { ChatMessage } from "@/lib/types";
 import type { AppUsage } from "@/lib/usage";
 import { generateUUID } from "@/lib/utils";
+import { classifyUserMessage } from "@/lib/ai/agent/classify";
+import { createResumeOptStream } from "@/lib/ai/agent/resume-opt";
+import { createMockInterviewStream } from "@/lib/ai/agent/mock-interview";
 
 const getTokenlensCatalog = cache(
   async (): Promise<ModelCatalog | undefined> => {
@@ -56,71 +59,91 @@ export async function createChatStream({
   let finalMergedUsage: AppUsage | undefined;
 
   const stream = createUIMessageStream<ChatMessage>({
-    execute: ({ writer: dataStream }) => {
-      const result = streamText({
-        model: myProvider.languageModel(selectedChatModel),
-        system: systemPrompt({ selectedChatModel, requestHints }),
-        messages: convertToModelMessages(messages),
-        stopWhen: stepCountIs(5),
-        experimental_activeTools:
-          selectedChatModel === "chat-model-reasoning"
-            ? []
-            : [
-                "getWeather",
-                "createDocument",
-                "updateDocument",
-                "requestSuggestions",
-              ],
-        experimental_transform: smoothStream({ chunking: "word" }),
-        tools: {
-          getWeather,
-          createDocument: createDocument({ session, dataStream }),
-          updateDocument: updateDocument({ session, dataStream }),
-          requestSuggestions: requestSuggestions({
-            session,
-            dataStream,
-          }),
-        },
-        experimental_telemetry: {
-          isEnabled: isProductionEnvironment,
-          functionId: "stream-text",
-        },
-        onFinish: async ({ usage }) => {
-          try {
-            const providers = await getTokenlensCatalog();
-            const modelId =
-              myProvider.languageModel(selectedChatModel).modelId;
-            if (!modelId) {
+    execute: async ({ writer: dataStream }) => {
+      // 分类用户消息
+      const classification = await classifyUserMessage(messages);
+
+      // 根据分类结果创建不同的 result
+      let result;
+      if (classification.resume_opt) {
+        // 简历优化流程
+        result = await createResumeOptStream({
+          messages,
+          selectedChatModel,
+        });
+      } else if (classification.mock_interview) {
+        // 模拟面试流程
+        result = await createMockInterviewStream({
+          messages,
+          selectedChatModel,
+        });
+      } else {
+        // 默认流程
+        result = streamText({
+          model: myProvider.languageModel(selectedChatModel),
+          system: systemPrompt({ selectedChatModel, requestHints }),
+          messages: convertToModelMessages(messages),
+          stopWhen: stepCountIs(5),
+          experimental_activeTools:
+            selectedChatModel === "chat-model-reasoning"
+              ? []
+              : [
+                  "getWeather",
+                  "createDocument",
+                  "updateDocument",
+                  "requestSuggestions",
+                ],
+          experimental_transform: smoothStream({ chunking: "word" }),
+          tools: {
+            getWeather,
+            createDocument: createDocument({ session, dataStream }),
+            updateDocument: updateDocument({ session, dataStream }),
+            requestSuggestions: requestSuggestions({
+              session,
+              dataStream,
+            }),
+          },
+          experimental_telemetry: {
+            isEnabled: isProductionEnvironment,
+            functionId: "stream-text",
+          },
+          onFinish: async ({ usage }) => {
+            try {
+              const providers = await getTokenlensCatalog();
+              const modelId =
+                myProvider.languageModel(selectedChatModel).modelId;
+              if (!modelId) {
+                finalMergedUsage = usage;
+                dataStream.write({
+                  type: "data-usage",
+                  data: finalMergedUsage,
+                });
+                return;
+              }
+
+              if (!providers) {
+                finalMergedUsage = usage;
+                dataStream.write({
+                  type: "data-usage",
+                  data: finalMergedUsage,
+                });
+                return;
+              }
+
+              const summary = getUsage({ modelId, usage, providers });
+              finalMergedUsage = { ...usage, ...summary, modelId } as AppUsage;
+              dataStream.write({ type: "data-usage", data: finalMergedUsage });
+            } catch (err) {
+              console.warn("TokenLens enrichment failed", err);
               finalMergedUsage = usage;
-              dataStream.write({
-                type: "data-usage",
-                data: finalMergedUsage,
-              });
-              return;
+              dataStream.write({ type: "data-usage", data: finalMergedUsage });
             }
+          },
+        });
+      }
 
-            if (!providers) {
-              finalMergedUsage = usage;
-              dataStream.write({
-                type: "data-usage",
-                data: finalMergedUsage,
-              });
-              return;
-            }
-
-            const summary = getUsage({ modelId, usage, providers });
-            finalMergedUsage = { ...usage, ...summary, modelId } as AppUsage;
-            dataStream.write({ type: "data-usage", data: finalMergedUsage });
-          } catch (err) {
-            console.warn("TokenLens enrichment failed", err);
-            finalMergedUsage = usage;
-            dataStream.write({ type: "data-usage", data: finalMergedUsage });
-          }
-        },
-      });
-
+      // 统一处理 result
       result.consumeStream();
-
       dataStream.merge(
         result.toUIMessageStream({
           sendReasoning: true,
