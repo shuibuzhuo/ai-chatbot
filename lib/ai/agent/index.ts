@@ -31,6 +31,7 @@ export async function createChatStream({
     execute: async ({ writer: dataStream }) => {
       // 分类用户消息
       const classification = await classifyUserMessage(messages);
+      console.log("classification...", classification);
 
       // 根据分类结果创建不同的 result
       let result;
