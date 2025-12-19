@@ -1,7 +1,9 @@
-import { convertToModelMessages, streamText } from "ai";
+import { convertToModelMessages, streamText, type UIMessageStreamWriter } from "ai";
 import type { ChatMessage } from "@/lib/types";
 import type { ChatModel } from "@/lib/ai/models";
 import { myProvider } from "@/lib/ai/providers";
+import type { AppUsage } from "@/lib/usage";
+import { createUsageFinishHandler } from "@/lib/ai/agent/common";
 
 const mockInterviewSystemPrompt = `你是一个互联网大公司的资深程序员和面试官，尤其擅长前端技术栈，包括 HTML、CSS、JavaScript、TypeScript、React、Vue、Node.js、小程序等技术。
 
@@ -26,14 +28,23 @@ const mockInterviewSystemPrompt = `你是一个互联网大公司的资深程序
 export async function createMockInterviewStream({
   messages,
   selectedChatModel,
+  dataStream,
+  onUsageUpdate,
 }: {
   messages: ChatMessage[];
   selectedChatModel: ChatModel["id"];
+  dataStream: UIMessageStreamWriter<ChatMessage>;
+  onUsageUpdate: (usage: AppUsage) => void;
 }) {
   const result = streamText({
     model: myProvider.languageModel(selectedChatModel),
     system: mockInterviewSystemPrompt,
     messages: convertToModelMessages(messages),
+    onFinish: createUsageFinishHandler({
+      selectedChatModel,
+      dataStream,
+      onUsageUpdate,
+    }),
   });
 
   return result;

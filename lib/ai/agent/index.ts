@@ -40,12 +40,20 @@ export async function createChatStream({
         result = await createResumeOptStream({
           messages,
           selectedChatModel,
+          dataStream,
+          onUsageUpdate: (usage) => {
+            finalMergedUsage = usage;
+          },
         });
       } else if (classification.mock_interview) {
         // 模拟面试流程
         result = await createMockInterviewStream({
           messages,
           selectedChatModel,
+          dataStream,
+          onUsageUpdate: (usage) => {
+            finalMergedUsage = usage;
+          },
         });
       } else {
         // 默认流程
