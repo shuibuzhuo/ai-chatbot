@@ -5,6 +5,7 @@ import { myProvider } from "@/lib/ai/providers";
 import type { AppUsage } from "@/lib/usage";
 import { createUsageFinishHandler } from "@/lib/ai/agent/common";
 import { evaluateSkills } from "@/lib/ai/tools/evaluate-skills";
+import { getResumeTemplateTool } from "@/lib/ai/tools/resume-template";
 
 const resumeOptSystemPrompt = `你是一个互联网大公司的资深程序员和简历优化专家，最擅长程序员简历的评审和优化。你精通前端技术栈，包括 HTML、CSS、JavaScript、TypeScript、React、Vue、Node.js、小程序等技术，同时也熟悉后端、全栈等技术领域。
 
@@ -16,6 +17,10 @@ const resumeOptSystemPrompt = `你是一个互联网大公司的资深程序员�
 - "请将您的简历文本内容粘贴输入到这里，我会帮您进行优化。"
 - 提醒用户：要内容完整，但可以隐藏个人信息（如姓名、电话、邮箱等）
 - 如果用户询问如何上传简历，请回复："上传功能正在开发中，现在可把简历文本内容发过来"
+
+## 1.1 如果用户需要简历模板
+
+如果用户想要简历模板或询问如何写简历，请直接调用 getResumeTemplateTool 工具来获取简历模板，不要自己生成简历模板。工具会返回标准的程序员简历模板格式。
 
 ## 2. 评审简历需要关注的重点
 
@@ -100,9 +105,13 @@ export async function createResumeOptStream({
     experimental_activeTools:
       selectedChatModel === "chat-model-reasoning"
         ? []
-        : ["evaluateSkills"],
+        : [
+          // "evaluateSkills", 
+          "getResumeTemplate"
+        ],
     tools: {
-      evaluateSkills,
+      // evaluateSkills,
+      getResumeTemplate: getResumeTemplateTool,
     },
     onFinish: createUsageFinishHandler({
       selectedChatModel,

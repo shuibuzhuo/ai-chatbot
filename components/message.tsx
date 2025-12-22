@@ -104,6 +104,7 @@ const PurePreviewMessage = ({
 
           {message.parts?.map((part, index) => {
             const { type } = part;
+            console.log('type...', type)
             const key = `message-${message.id}-part-${index}`;
 
             if (type === "reasoning" && part.text?.trim().length > 0) {
@@ -260,6 +261,17 @@ const PurePreviewMessage = ({
                     )}
                   </ToolContent>
                 </Tool>
+              );
+            }
+
+            if (type === "tool-getResumeTemplate") {
+              const { toolCallId } = part;
+              console.log('[tool-getResumeTemplate] toolCallId...', toolCallId)
+              console.log('[tool-getResumeTemplate] part...', part)
+              return (
+                <div key={toolCallId}>
+                  <Response>{part.output?.template ?? '无法获取简历模板'}</Response>
+                </div>
               );
             }
 
