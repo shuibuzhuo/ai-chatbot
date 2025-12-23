@@ -20,6 +20,8 @@ import { ChatSDKError } from "../errors";
 import type { AppUsage } from "../usage";
 import { generateUUID } from "../utils";
 import {
+  apiCallLog,
+  type ApiCallLog,
   type Chat,
   chat,
   type DBMessage,
@@ -529,7 +531,7 @@ export async function getMessageCountByUserId({
   differenceInHours: number;
 }) {
   try {
-    const twentyFourHoursAgo = new Date(
+    const timeAgo = new Date(
       Date.now() - differenceInHours * 60 * 60 * 1000
     );
 
@@ -540,7 +542,7 @@ export async function getMessageCountByUserId({
       .where(
         and(
           eq(chat.userId, id),
-          gte(message.createdAt, twentyFourHoursAgo),
+          gte(message.createdAt, timeAgo),
           eq(message.role, "user")
         )
       )
@@ -551,6 +553,52 @@ export async function getMessageCountByUserId({
     throw new ChatSDKError(
       "bad_request:database",
       "Failed to get message count by user id"
+    );
+  }
+}
+
+export async function recordApiCall({ userId }: { userId: string }) {
+  try {
+    await db.insert(apiCallLog).values({
+      userId,
+      createdAt: new Date(),
+    });
+  } catch (_error) {
+    throw new ChatSDKError(
+      "bad_request:database",
+      "Failed to record API call"
+    );
+  }
+}
+
+export async function getApiCallCountByUserId({
+  id,
+  differenceInHours,
+}: {
+  id: string;
+  differenceInHours: number;
+}) {
+  try {
+    const timeAgo = new Date(
+      Date.now() - differenceInHours * 60 * 60 * 1000
+    );
+
+    const [stats] = await db
+      .select({ count: count(apiCallLog.id) })
+      .from(apiCallLog)
+      .where(
+        and(
+          eq(apiCallLog.userId, id),
+          gte(apiCallLog.createdAt, timeAgo)
+        )
+      )
+      .execute();
+
+    return stats?.count ?? 0;
+  } catch (_error) {
+    throw new ChatSDKError(
+      "bad_request:database",
+      "Failed to get API call count by user id"
     );
   }
 }

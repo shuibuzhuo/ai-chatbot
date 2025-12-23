@@ -171,3 +171,13 @@ export const stream = pgTable(
 );
 
 export type Stream = InferSelectModel<typeof stream>;
+
+export const apiCallLog = pgTable("ApiCallLog", {
+  id: uuid("id").primaryKey().notNull().defaultRandom(),
+  userId: uuid("userId")
+    .notNull()
+    .references(() => user.id),
+  createdAt: timestamp("createdAt").notNull(),
+});
+
+export type ApiCallLog = InferSelectModel<typeof apiCallLog>;

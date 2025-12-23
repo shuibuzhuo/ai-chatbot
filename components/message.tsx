@@ -104,7 +104,6 @@ const PurePreviewMessage = ({
 
           {message.parts?.map((part, index) => {
             const { type } = part;
-            console.log('type...', type)
             const key = `message-${message.id}-part-${index}`;
 
             if (type === "reasoning" && part.text?.trim().length > 0) {
