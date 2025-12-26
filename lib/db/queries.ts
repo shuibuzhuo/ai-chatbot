@@ -245,6 +245,23 @@ export async function getChatById({ id }: { id: string }) {
   }
 }
 
+export async function getFirstChatId() {
+  try {
+    const [firstChat] = await db
+      .select({ id: chat.id })
+      .from(chat)
+      .orderBy(asc(chat.createdAt))
+      .limit(1);
+
+    return firstChat?.id ?? null;
+  } catch (_error) {
+    throw new ChatSDKError(
+      "bad_request:database",
+      "Failed to get first chat id"
+    );
+  }
+}
+
 export async function saveMessages({ messages }: { messages: DBMessage[] }) {
   try {
     return await db.insert(message).values(messages);
