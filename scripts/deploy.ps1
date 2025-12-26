@@ -1,9 +1,9 @@
 #!/usr/bin/env pwsh
-# Next.js 部署脚本 - 压缩并上传 .next 目录
+# Next.js 部署脚本 - 打包并上传部署文件
 
 param(
-    [string]$Server = "root@120.48.20.216",
-    [string]$RemotePath = "/root/zhitalk/agent-build",
+    [string]$Server = "root@43.133.57.149",
+    [string]$RemotePath = "/root/shuibuzhuo-chat/agent-build",
     [switch]$Upload = $false,
     [switch]$Clean = $false
 )
@@ -13,15 +13,27 @@ $ErrorActionPreference = "Stop"
 Write-Host "🚀 Next.js 部署脚本" -ForegroundColor Cyan
 Write-Host ""
 
-# 检查 .next 目录是否存在
-if (-not (Test-Path ".next")) {
-    Write-Host "❌ 错误: .next 目录不存在！" -ForegroundColor Red
+# 检查必需的文件和目录是否存在
+$requiredItems = @(".next", "public", "package.json", "pnpm-lock.yaml")
+$missingItems = @()
+
+foreach ($item in $requiredItems) {
+    if (-not (Test-Path $item)) {
+        $missingItems += $item
+    }
+}
+
+if ($missingItems.Count -gt 0) {
+    Write-Host "❌ 错误: 以下必需项不存在！" -ForegroundColor Red
+    foreach ($item in $missingItems) {
+        Write-Host "   - $item" -ForegroundColor Yellow
+    }
     Write-Host "   请先运行 'pnpm build' 构建项目" -ForegroundColor Yellow
     exit 1
 }
 
 # 检查是否已存在压缩包
-$zipFile = ".next.zip"
+$zipFile = "deploy.zip"
 if (Test-Path $zipFile) {
     if ($Clean) {
         Write-Host "🗑️  删除已存在的压缩包..." -ForegroundColor Yellow
@@ -37,22 +49,36 @@ if (Test-Path $zipFile) {
     }
 }
 
-# 计算 .next 目录大小
-Write-Host "📊 分析 .next 目录..." -ForegroundColor Cyan
-$nextSize = (Get-ChildItem .next -Recurse -File | Measure-Object -Property Length -Sum).Sum
-$nextSizeMB = [math]::Round($nextSize / 1MB, 2)
-$fileCount = (Get-ChildItem .next -Recurse -File).Count
+# 计算所有打包项的大小
+Write-Host "📊 分析打包文件..." -ForegroundColor Cyan
+$totalSize = 0
+$totalFiles = 0
 
-Write-Host "   文件数量: $fileCount" -ForegroundColor Gray
-Write-Host "   目录大小: $nextSizeMB MB" -ForegroundColor Gray
+foreach ($item in $requiredItems) {
+    if (Test-Path $item -PathType Container) {
+        $size = (Get-ChildItem $item -Recurse -File | Measure-Object -Property Length -Sum).Sum
+        $count = (Get-ChildItem $item -Recurse -File).Count
+        $totalSize += $size
+        $totalFiles += $count
+    } else {
+        $size = (Get-Item $item).Length
+        $totalSize += $size
+        $totalFiles += 1
+    }
+}
+
+$totalSizeMB = [math]::Round($totalSize / 1MB, 2)
+
+Write-Host "   文件数量: $totalFiles" -ForegroundColor Gray
+Write-Host "   目录大小: $totalSizeMB MB" -ForegroundColor Gray
 Write-Host ""
 
-# 压缩 .next 目录
-Write-Host "📦 正在压缩 .next 目录..." -ForegroundColor Cyan
+# 打包所有文件
+Write-Host "📦 正在打包文件..." -ForegroundColor Cyan
 $startTime = Get-Date
 
 try {
-    Compress-Archive -Path .next -DestinationPath $zipFile -Force -CompressionLevel Optimal
+    Compress-Archive -Path .next,public,package.json,pnpm-lock.yaml -DestinationPath $zipFile -Force -CompressionLevel Optimal
     
     $endTime = Get-Date
     $duration = ($endTime - $startTime).TotalSeconds
@@ -60,7 +86,7 @@ try {
     # 计算压缩后大小
     $zipSize = (Get-Item $zipFile).Length
     $zipSizeMB = [math]::Round($zipSize / 1MB, 2)
-    $compressionRatio = [math]::Round((1 - $zipSize / $nextSize) * 100, 1)
+    $compressionRatio = [math]::Round((1 - $zipSize / $totalSize) * 100, 1)
     
     Write-Host "✅ 压缩完成！" -ForegroundColor Green
     Write-Host "   压缩文件: $zipFile" -ForegroundColor Gray
@@ -89,27 +115,21 @@ if ($Upload) {
             Write-Host "✅ 上传成功！" -ForegroundColor Green
             Write-Host ""
             
-            # 询问是否在服务器上解压
-            $response = Read-Host "是否在服务器上解压? (Y/n)"
-            if ($response -ne "n" -and $response -ne "N") {
-                Write-Host "🔧 正在服务器上解压..." -ForegroundColor Cyan
-                
-                $sshCommand = "cd $RemotePath && unzip -q -o $zipFile && rm $zipFile && echo '解压完成' && ls -la | head -10"
-                ssh $Server $sshCommand
-                
-                if ($LASTEXITCODE -eq 0) {
-                    Write-Host "✅ 解压完成！" -ForegroundColor Green
-                } else {
-                    Write-Host "⚠️  解压可能失败，请手动检查" -ForegroundColor Yellow
-                }
+            # 自动在服务器上解压并清理
+            Write-Host "🔧 正在服务器上解压并清理..." -ForegroundColor Cyan
+            
+            $sshCommand = "cd $RemotePath && unzip -q -o $zipFile && rm $zipFile && echo '解压完成' && ls -la"
+            ssh $Server $sshCommand
+            
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "✅ 解压完成，压缩包已删除！" -ForegroundColor Green
+            } else {
+                Write-Host "⚠️  解压可能失败，请手动检查" -ForegroundColor Yellow
             }
             
-            # 询问是否删除本地压缩包
-            $response = Read-Host "是否删除本地压缩包? (Y/n)"
-            if ($response -ne "n" -and $response -ne "N") {
-                Remove-Item $zipFile -Force
-                Write-Host "✅ 本地压缩包已删除" -ForegroundColor Green
-            }
+            # 自动删除本地压缩包
+            Remove-Item $zipFile -Force
+            Write-Host "✅ 本地压缩包已删除" -ForegroundColor Green
         } else {
             Write-Host "❌ 上传失败！" -ForegroundColor Red
             exit 1
