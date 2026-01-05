@@ -123,6 +123,25 @@ if ($Upload) {
             
             if ($LASTEXITCODE -eq 0) {
                 Write-Host "✅ 解压完成，压缩包已删除！" -ForegroundColor Green
+                
+                # 等待2秒后重启 PM2
+                Write-Host "⏳ 等待 2 秒后重启 PM2..." -ForegroundColor Cyan
+                Start-Sleep -Seconds 2
+                
+                Write-Host "🔄 正在重启 PM2 进程 (id: 0)..." -ForegroundColor Cyan
+                $pm2Command = "cd $RemotePath && npx pm2 restart 0"
+                ssh $Server $pm2Command
+                
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Host "✅ PM2 重启成功！" -ForegroundColor Green
+                    
+                    # 显示 PM2 进程列表
+                    Write-Host "📋 查看 PM2 进程列表..." -ForegroundColor Cyan
+                    $pm2ListCommand = "cd $RemotePath && npx pm2 list"
+                    ssh $Server $pm2ListCommand
+                } else {
+                    Write-Host "⚠️  PM2 重启可能失败，请手动检查" -ForegroundColor Yellow
+                }
             } else {
                 Write-Host "⚠️  解压可能失败，请手动检查" -ForegroundColor Yellow
             }
@@ -145,4 +164,3 @@ if ($Upload) {
 
 Write-Host ""
 Write-Host "✨ 完成！" -ForegroundColor Green
-

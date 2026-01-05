@@ -17,7 +17,7 @@
     "db:check": "drizzle-kit check",
     "db:up": "drizzle-kit up",
     "test": "export PLAYWRIGHT=True && pnpm exec playwright test",
-    "deploy": "pnpm build && powershell -ExecutionPolicy Bypass -File scripts/deploy.ps1 -Upload"
+    "deploy": "pnpm build && pwsh -ExecutionPolicy Bypass -File scripts/deploy.ps1 -Upload"
   },
   "dependencies": {
     "@ai-sdk/deepseek": "^1.0.31",
