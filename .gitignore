@@ -45,3 +45,5 @@ yarn-error.log*
 /playwright/*
 
 logs
+
+/temp
