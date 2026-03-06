@@ -1,11 +1,21 @@
-import { convertToModelMessages, streamText, type UIMessageStreamWriter } from "ai";
+import { createMCPClient } from "@ai-sdk/mcp";
+import {
+  convertToModelMessages,
+  streamText,
+  type Tool,
+  type UIMessageStreamWriter,
+} from "ai";
+import { z } from "zod";
 import type { ChatMessage } from "@/lib/types";
 import type { ChatModel } from "@/lib/ai/models";
 import { myProvider } from "@/lib/ai/providers";
 import type { AppUsage } from "@/lib/usage";
 import { createUsageFinishHandler } from "@/lib/ai/agent/common";
+import { interviewHrQuestionsMCPConfig } from "@/lib/ai/mcp-config";
 
 const mockInterviewSystemPrompt = `你是一个专业的程序员面试官，擅长前端技术栈，包括 HTML、CSS、JavaScript、TypeScript、React、Vue、Node.js、小程序等技术。
+
+你可以调用 MCP 工具获取 HR 面试题，用于丰富面试问题。
 
 你的任务是进行模拟面试，帮助用户准备真实的面试场景。
 
@@ -49,15 +59,54 @@ export async function createMockInterviewStream({
   dataStream: UIMessageStreamWriter<ChatMessage>;
   onUsageUpdate: (usage: AppUsage) => void;
 }) {
+  let mcpClient: Awaited<ReturnType<typeof createMCPClient>> | undefined;
+
+  try {
+    mcpClient = await createMCPClient({
+      transport: {
+        type: "http",
+        url: interviewHrQuestionsMCPConfig.url,
+        headers: interviewHrQuestionsMCPConfig.headers,
+      },
+    });
+  } catch (err) {
+    console.warn(
+      "[mock-interview] MCP client init failed, running without HR questions tools:",
+      err
+    );
+  }
+
+  const mcpTools = mcpClient
+    ? await mcpClient.tools({
+        schemas: {
+          get_hr_behavioural_questions: {
+            inputSchema: z.object({}),
+          },
+        },
+      })
+    : {};
+  const usageFinishHandler = createUsageFinishHandler({
+    selectedChatModel,
+    dataStream,
+    onUsageUpdate,
+  });
+
   const result = streamText({
     model: myProvider.languageModel(selectedChatModel),
     system: mockInterviewSystemPrompt,
     messages: convertToModelMessages(messages),
-    onFinish: createUsageFinishHandler({
-      selectedChatModel,
-      dataStream,
-      onUsageUpdate,
-    }),
+    tools: mcpTools as Record<string, Tool>,
+    experimental_activeTools:
+      selectedChatModel === "chat-model-reasoning"
+        ? []
+        : Object.keys(mcpTools),
+    onFinish: async (params) => {
+      await usageFinishHandler(params);
+      await mcpClient?.close();
+    },
+    onError: async () => {
+      await mcpClient?.close();
+    },
   });
 
   return result;

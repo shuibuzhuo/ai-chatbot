@@ -10,6 +10,7 @@ import { DocumentToolResult } from "./document";
 import { DocumentPreview } from "./document-preview";
 import { MessageContent } from "./elements/message";
 import { Response } from "./elements/response";
+import { CodeBlock } from "./elements/code-block";
 import {
   Tool,
   ToolContent,
@@ -265,12 +266,60 @@ const PurePreviewMessage = ({
 
             if (type === "tool-getResumeTemplate") {
               const { toolCallId } = part;
-              console.log('[tool-getResumeTemplate] toolCallId...', toolCallId)
-              console.log('[tool-getResumeTemplate] part...', part)
               return (
                 <div key={toolCallId}>
-                  <Response>{part.output?.template ?? '无法获取简历模板'}</Response>
+                  <Response>{part.output?.template ?? "无法获取简历模板"}</Response>
                 </div>
+              );
+            }
+
+            const isToolPart =
+              (type.startsWith("tool-") || type === "dynamic-tool") &&
+              "toolCallId" in part &&
+              "state" in part;
+            if (isToolPart) {
+              const toolPart = part as {
+                toolCallId: string;
+                state: "input-streaming" | "input-available" | "output-available" | "output-error";
+                input?: unknown;
+                output?: unknown;
+                errorText?: string;
+                toolName?: string;
+              };
+              const { toolCallId, state } = toolPart;
+              const displayType =
+                type === "dynamic-tool" && toolPart.toolName
+                  ? `tool-${toolPart.toolName}`
+                  : type;
+              const outputDisplay =
+                toolPart.output !== undefined
+                  ? typeof toolPart.output === "object" && toolPart.output !== null
+                    ? JSON.stringify(toolPart.output, null, 2)
+                    : String(toolPart.output)
+                  : undefined;
+              return (
+                <Tool defaultOpen={true} key={toolCallId}>
+                  <ToolHeader state={state} type={displayType as `tool-${string}`} />
+                  <ToolContent>
+                    {state === "input-available" && toolPart.input !== undefined && (
+                      <ToolInput input={toolPart.input} />
+                    )}
+                    {(state === "output-available" || state === "output-error") &&
+                      (toolPart.output !== undefined || toolPart.errorText) && (
+                        <ToolOutput
+                          errorText={toolPart.errorText}
+                          output={
+                            outputDisplay ? (
+                              <CodeBlock
+                                code={outputDisplay}
+                                language="json"
+                              />
+                            ) : undefined
+                          }
+                        />
+                      )}
+                  </ToolContent>
+                </Tool>
               );
             }
 
