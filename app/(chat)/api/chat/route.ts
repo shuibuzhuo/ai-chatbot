@@ -1,5 +1,6 @@
 import { geolocation } from "@vercel/functions";
 import { JsonToSseTransformStream } from "ai";
+const { PDFParse } = require("pdf-parse");
 import { after } from "next/server";
 import {
   createResumableStreamContext,
@@ -61,6 +62,7 @@ export async function POST(request: Request) {
     const json = await request.json();
     requestBody = postRequestBodySchema.parse(json);
   } catch (_) {
+    console.log('error...', _)
     return new ChatSDKError("bad_request:api").toResponse();
   }
 
@@ -105,6 +107,57 @@ export async function POST(request: Request) {
       return new ChatSDKError("rate_limit:chat").toResponse();
     }
 
+    // Extract base64 from file parts and create newMessage 
+    let base64Value: string | undefined;
+    const newParts = message.parts.map((part) => {
+      if (
+        part.type === "file" &&
+        "base64" in part &&
+        typeof part.base64 === "string"
+      ) {
+        base64Value = part.base64;
+        // @ts-ignore Create a new text part 
+        return { type: "text", text: `<${part.name as string}>` };
+      }
+      return part;
+    });
+
+    const newMessage: ChatMessage = {
+      ...message,
+      // @ts-ignore 
+      parts: newParts,
+    };
+
+    console.log("base64 value:", base64Value);
+    console.log("newMessage...", newMessage)
+    if (base64Value) {
+      const pdfBuffer = Buffer.from(base64Value, 'base64');
+      const pdfUint8Array = new Uint8Array(pdfBuffer);
+      console.log("pdfUint8Array...", pdfUint8Array)
+
+      // 标记 PDF 解析是否失败
+      let pdfParseFailed = false;
+      // 使用 pdf-parse 提取文本内容
+      try {
+        const pdfParser = new PDFParse(pdfUint8Array);
+        await pdfParser.load();
+        const textContent = await pdfParser.getText();
+
+        // 检查是否成功获取到文本内容
+        if (!textContent || !textContent.text || textContent.text.trim().length === 0) {
+          console.warn('PDF 文件解析失败：未获取到文本内容');
+          pdfParseFailed = true;
+        } else {
+          console.log('PDF 文本内容:');
+          console.log('='.repeat(50));
+          console.log(textContent.text);
+          console.log('='.repeat(50));
+        }
+      } catch (error) {
+        console.error('解析 PDF 文件时出错:', error);
+        pdfParseFailed = true;
+      }
+    }
     await recordApiCall({ userId: session.user.id });
 
     const chat = await getChatById({ id });
@@ -118,7 +171,7 @@ export async function POST(request: Request) {
       messagesFromDb = await getMessagesByChatId({ id });
     } else {
       const title = await generateTitleFromUserMessage({
-        message,
+        message: newMessage,
       });
 
       await saveChat({
@@ -130,7 +183,7 @@ export async function POST(request: Request) {
       // New chat - no need to fetch messages, it's empty
     }
 
-    const uiMessages = [...convertToUIMessages(messagesFromDb), message];
+    const uiMessages = [...convertToUIMessages(messagesFromDb), newMessage];
 
     const { longitude, latitude, city, country } = geolocation(request);
 
@@ -145,9 +198,9 @@ export async function POST(request: Request) {
       messages: [
         {
           chatId: id,
-          id: message.id,
+          id: newMessage.id,
           role: "user",
-          parts: message.parts,
+          parts: newMessage.parts,
           attachments: [],
           createdAt: new Date(),
         },
